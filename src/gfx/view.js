@@ -219,15 +219,22 @@ export class GameView {
       g.userData.state = li >= 0 ? 'library' : owner >= 0 ? 'owned' : bi >= 0 ? 'board' : 'hidden';
       if (!pos) { g.visible = false; continue; }
       const dest = V3(pos.x, pos.y, pos.z);
-      if (instant || !g.visible) { g.position.copy(dest); if (!instant) { g.position.y += 4; } }
+      const appearing = instant || !g.visible;
+      // syncAll runs after every event: only hop tokens whose slot actually changed
+      const moved = appearing || !g.userData.home || !g.userData.home.equals(dest);
+      if (appearing) { g.position.copy(dest); if (!instant) { g.position.y += 4; } }
       g.visible = true; g.userData.home = dest;
-      if (!instant) this._tweenGroup(g, dest, 0.7);
+      if (instant) { g.userData.animId = (g.userData.animId || 0) + 1; g.userData.moving = false; }
+      else if (moved) this._tweenGroup(g, dest, 0.7);
     }
   }
 
   _tweenGroup(g, dest, dur, arc = 1.2) {
     const id = g.userData.animId = (g.userData.animId || 0) + 1, p0 = g.position.clone();
-    return this.tweens.run(dur, (k, e) => { if (g.userData.animId !== id) return; g.position.lerpVectors(p0, dest, e); g.position.y += Math.sin(PI * k) * arc; }, { ease: ease.inOutCubic });
+    g.userData.moving = true;
+    const run = this.tweens.run(dur, (k, e) => { if (g.userData.animId !== id) return; g.position.lerpVectors(p0, dest, e); g.position.y += Math.sin(PI * k) * arc; }, { ease: ease.inOutCubic });
+    run.then(() => { if (g.userData.animId === id) g.userData.moving = false; });
+    return run;
   }
 
   // ------------------------------------------------------------------ wonders
@@ -440,7 +447,7 @@ export class GameView {
       const st = g.userData.state;
       const glow = g.userData.glowT || 0;
       if (st === 'library' || glow) { g.rotation.y += dt * 0.9; g.position.y = h.y + Math.sin(t * 2 + h.x) * 0.06 + (g.userData.hoverT || 0) * 0.15; }
-      else if (!g.userData.animId || this.tweens.items.length === 0) { g.rotation.y += (0 - g.rotation.y) * Math.min(1, dt * 4); }
+      else if (!g.userData.moving) { const k = Math.min(1, dt * 4); g.rotation.y += (0 - g.rotation.y) * k; g.position.y += (h.y - g.position.y) * k; }
       g.userData.halo.material.opacity = glow ? 0.28 + 0.16 * Math.sin(t * 5) : 0;
       g.userData.hoverT = (this.hovered && this.hovered.type === 'token' && this.hovered.id === g.userData.id) ? 1 : 0;
     }
