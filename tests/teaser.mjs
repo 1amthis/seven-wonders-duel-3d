@@ -24,7 +24,7 @@ mkdirSync(outDir, { recursive: true });
 if (!encodeOnly) { rmSync(framesDir, { recursive: true, force: true }); mkdirSync(framesDir, { recursive: true }); }
 
 // The game's film grain is random per pixel per frame, which video codecs and GIF palettes cannot compress: lower it for
-// filming (see the uGrain uniform in src/gfx/stage.js) and let hqdn3d clean up what is left.
+// filming (see the uAmount uniform of the GrainShader in src/gfx/stage.js) and let hqdn3d clean up what is left.
 function encode() {
   const inp = ['-y', '-hide_banner', '-loglevel', 'error', '-framerate', String(fps), '-i', join(framesDir, 'f%04d.jpg')];
   // mp4: limited-range yuv420p plays everywhere (the JPEG frames are full range); gif: small enough to sit inline in a README
@@ -129,7 +129,7 @@ try {
       '<div class="title-small" style="margin-top:4vh;font-size:clamp(9px,1.4vh,14px);opacity:.6">A fan-made tribute · not affiliated with the publishers of 7 Wonders Duel</div>');
     mk('t-fade', 'inset:0;background:#000;opacity:1;z-index:99');
     document.getElementById('hud').style.transition = 'none';
-    __duel.stage.final.uniforms.uGrain.value = 0.01;
+    __duel.stage.grain.uniforms.uAmount.value = 0.004;
   }, Q);
   await sleep(500);
   const P = await page.evaluate(() => Object.fromEntries(Object.entries(__duel.stage.presets()).map(([k, v]) => [k, { t: [v.target.x, v.target.y, v.target.z], yaw: v.yaw, pitch: v.pitch, dist: v.dist }])));

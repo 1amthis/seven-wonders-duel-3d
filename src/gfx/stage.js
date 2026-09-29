@@ -7,11 +7,12 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { TABLE } from './layout.js';
 
+// Runs on linear HDR colour, before the OutputPass tone-maps it.
 const FinalShader = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVignette: { value: 1.35 }, uGrain: { value: 0.035 }, uAberr: { value: 0.006 }, uFlash: { value: new THREE.Vector3() }, uSat: { value: 1.08 } },
+  uniforms: { tDiffuse: { value: null }, uVignette: { value: 1.35 }, uAberr: { value: 0.006 }, uFlash: { value: new THREE.Vector3() }, uSat: { value: 1.08 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uTime, uVignette, uGrain, uAberr, uSat; uniform vec3 uFlash; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uVignette, uAberr, uSat; uniform vec3 uFlash; varying vec2 vUv;
     void main(){
       vec2 c = vUv - 0.5; float d = dot(c, c);
       vec2 off = c * d * uAberr;
@@ -19,8 +20,22 @@ const FinalShader = {
       float l = dot(col, vec3(0.299, 0.587, 0.114)); col = mix(vec3(l), col, uSat);
       col *= 1.0 - d * uVignette;
       col += uFlash * (1.0 - d * 1.2);
-      float n = fract(sin(dot(vUv * vec2(1920., 1080.) + uTime, vec2(12.9898, 78.233))) * 43758.5453);
-      col += (n - 0.5) * uGrain;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
+// Film grain, applied after the OutputPass so uAmount is a plain display-space level (0.01 is about 2.5 of 255). Added
+// before tone-mapping it is stretched by the sRGB curve: on this dark scene the same noise looked like TV static.
+const GrainShader = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAmount: { value: 0.016 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime, uAmount; varying vec2 vUv;
+    float hash(vec2 p){ vec3 q = fract(vec3(p.xyx) * .1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    void main(){
+      vec3 col = texture2D(tDiffuse, vUv).rgb;
+      float frame = mod(floor(uTime * 24.), 97.); // re-drawn 24 times a second, like film; mod keeps the hash input small enough for fp32
+      col += (hash(gl_FragCoord.xy + frame * vec2(37., 59.)) - 0.5) * uAmount;
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -61,7 +76,8 @@ export class Stage {
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.42, 0.7, 0.88);
     this.final = new ShaderPass(FinalShader);
-    this.composer.addPass(this.renderPass); this.composer.addPass(this.bloom); this.composer.addPass(this.final); this.composer.addPass(new OutputPass());
+    this.grain = new ShaderPass(GrainShader);
+    for (const p of [this.renderPass, this.bloom, this.final, new OutputPass(), this.grain]) this.composer.addPass(p);
   }
 
   setQuality(q) {
@@ -183,7 +199,7 @@ export class Stage {
       r.target.z + Math.cos(r.yaw) * cp * r.dist + Math.cos(t * 0.19) * sway,
     );
     this.camera.lookAt(r.target.x, r.target.y, r.target.z);
-    this.final.uniforms.uTime.value = t;
+    this.grain.uniforms.uTime.value = t;
     const fl = this.final.uniforms.uFlash.value;
     fl.multiplyScalar(Math.exp(-dt * 5));
     for (const cb of this.frameCbs) cb(dt, t);
