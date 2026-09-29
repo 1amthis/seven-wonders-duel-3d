@@ -1,23 +1,42 @@
 {
   "name": "seven-wonders-duel-3d",
   "version": "1.0.0",
+  "description": "Play 7 Wonders Duel in 3D in your browser: a free, fully procedural fan-made version built with Three.js",
+  "keywords": [
+    "7-wonders-duel",
+    "seven-wonders-duel",
+    "board-game",
+    "card-game",
+    "browser-game",
+    "threejs",
+    "webgl",
+    "3d",
+    "procedural",
+    "esbuild"
+  ],
+  "homepage": "https://1amthis.github.io/seven-wonders-duel-3d/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1amthis/seven-wonders-duel-3d.git"
+  },
+  "bugs": {
+    "url": "https://github.com/1amthis/seven-wonders-duel-3d/issues"
+  },
+  "author": "1amthis",
+  "license": "ISC",
+  "type": "module",
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --serve",
-    "test": "node tests/rules.test.mjs && node tests/engine.test.mjs",
+    "test": "node tests/rules.test.mjs && node tests/engine.test.mjs && node tests/seo.test.mjs",
     "tune": "node tests/tune.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "7 Wonders Duel — a 3D fan tribute",
   "dependencies": {
     "@fontsource/cinzel": "^5.3.0",
     "@fontsource/cormorant-garamond": "^5.3.0",
     "esbuild": "^0.28.2",
     "three": "^0.186.1"
   },
-  "type": "module",
   "devDependencies": {
     "puppeteer-core": "^24.43.1"
   }
