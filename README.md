@@ -10,7 +10,9 @@
 
 <img src="docs/screenshots/turn.jpg" width="100%" alt="Seven Wonders Duel 3D in Age II: the pyramid of cards on a felt table between two cities, the military track with the conflict pawn, wonder cards along the bottom, and the Construct / Discard / Wonder dock open on a selected Temple" />
 
-**[▶ Watch the 13-second teaser](docs/teaser.mp4)** (silent)
+<a href="docs/teaser.mp4"><img src="docs/teaser.gif" width="480" alt="A 13-second teaser: a live match on the felt table, wonder miniatures rising from their cards, and the end card" /></a>
+
+**[▶ Watch the teaser in full quality](docs/teaser.mp4)** (13 s, silent)
 
 </div>
 
