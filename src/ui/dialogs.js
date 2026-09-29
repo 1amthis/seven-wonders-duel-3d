@@ -4,6 +4,12 @@ import { CARD, COLOR_HEX } from '../engine/data.js';
 
 const $ = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 
+// Ties a <label> to its <input> so screen readers (and Lighthouse) can name the field.
+let fieldId = 0;
+const labelFor = (label, input) => { input.id = 'field-' + ++fieldId; label.htmlFor = input.id; return label; };
+// Adds a "label / control" pair to an options grid.
+const addRow = (opts, text, el) => { const l = $('label', '', text); opts.append(el.tagName === 'INPUT' ? labelFor(l, el) : l, el); };
+
 export const PREFS_KEY = 'sw-duel-3d-prefs';
 export function loadPrefs() {
   const d = { mode: 'ai', level: 'normal', name: 'You', rival: 'Rival', first: 'random', seed: '', quality: 'high', master: 0.8, music: 0.5, sfx: 0.9, speed: 1, muted: false };
@@ -44,7 +50,7 @@ export class Dialogs {
         <div class="title-big" style="font-size:clamp(24px,min(4.6vw,6.6vh),64px);letter-spacing:.7em;margin-right:-.7em">DUEL</div>
         <div class="title-sub">Two rival civilisations. Three ages. One legacy.</div>`;
       const opts = $('div', 'opts');
-      const row = (label, el) => { opts.appendChild($('label', '', label)); opts.appendChild(el); };
+      const row = (label, el) => addRow(opts, label, el);
       row('Opponent', this.seg([['ai', 'Computer'], ['hot', 'Two players'], ['spec', 'Watch AI']], prefs.mode, v => { prefs.mode = v; refresh(); }));
       const diffLabel = $('label', '', 'Difficulty');
       const diff = this.seg([['easy', 'Scribe'], ['normal', 'Strategos'], ['hard', 'Pharaoh']], prefs.level, v => { prefs.level = v; });
@@ -52,7 +58,7 @@ export class Dialogs {
       const name = $('input'); name.type = 'text'; name.maxLength = 14; name.value = prefs.name; name.oninput = () => { prefs.name = name.value || 'You'; };
       row('Your name', name);
       const rival = $('input'); rival.type = 'text'; rival.maxLength = 14; rival.value = prefs.rival; rival.oninput = () => { prefs.rival = rival.value || 'Rival'; };
-      const rivalLabel = $('label', '', 'Rival name'); opts.append(rivalLabel, rival);
+      const rivalLabel = labelFor($('label', '', 'Rival name'), rival); opts.append(rivalLabel, rival);
       row('Who begins', this.seg([['random', 'Random'], ['me', 'Me'], ['rival', 'Rival']], prefs.first, v => { prefs.first = v; }));
       const seed = $('input'); seed.type = 'text'; seed.placeholder = 'random'; seed.value = prefs.seed; seed.oninput = () => { prefs.seed = seed.value; };
       row('Seed', seed);
@@ -88,7 +94,7 @@ export class Dialogs {
     return new Promise(resolve => {
       const p = $('div', 'panel'); p.innerHTML = '<h2>Settings</h2>';
       const opts = $('div', 'opts');
-      const row = (label, el) => { opts.appendChild($('label', '', label)); opts.appendChild(el); };
+      const row = (label, el) => addRow(opts, label, el);
       row('Graphics', this.seg([['high', 'High'], ['medium', 'Medium'], ['low', 'Low']], prefs.quality, v => { prefs.quality = v; onChange?.('quality', v); savePrefs(prefs); }));
       row('Animation', this.seg([[1, 'Normal'], [1.6, 'Fast'], [2.6, 'Very fast']], prefs.speed, v => { prefs.speed = +v; onChange?.('speed', +v); savePrefs(prefs); }));
       const slider = (key, label) => { const r = $('input'); r.type = 'range'; r.min = 0; r.max = 1; r.step = 0.01; r.value = prefs[key]; r.oninput = () => { prefs[key] = +r.value; onChange?.(key, +r.value); savePrefs(prefs); }; row(label, r); };
