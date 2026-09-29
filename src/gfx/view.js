@@ -29,6 +29,7 @@ export class GameView {
     this.popups = [];
     this.state = null;
     this.speed = 1;
+    this.dealPending = false;    // an ageStart is queued: the pyramid is not laid out until dealAge runs
     this.idleTokenSpin = 0;
   }
 
@@ -135,7 +136,8 @@ export class GameView {
   locate(state) {
     const T = new Map(), WT = new Map();
     const rows = state.structure.length ? Math.max(...state.structure.map(s => s.row)) + 1 : 0;
-    state.structure.forEach((s, i) => { if (!s.taken) T.set(s.card, { ...L.structureSlotPos(s, rows), yaw: 0, s: L.STRUCT_SCALE, faceUp: s.up, zone: 'struct', slot: i }); });
+    // while an ageStart is still queued the new pyramid belongs to dealAge, not to whatever syncAll runs before it
+    state.structure.forEach((s, i) => { if (!s.taken && !this.dealPending) T.set(s.card, { ...L.structureSlotPos(s, rows), yaw: 0, s: L.STRUCT_SCALE, faceUp: s.up, zone: 'struct', slot: i }); });
     state.players.forEach((pl, p) => {
       const byColor = {};
       for (const id of pl.cards) (byColor[CARD[id].color] ||= []).push(id);
@@ -363,6 +365,7 @@ export class GameView {
   // ------------------------------------------------------------------ age deal
   async dealAge(state) {
     this.state = state;
+    this.dealPending = false;
     const { T } = this.locate(state);
     const ids = [];
     // stack the deck first
@@ -372,11 +375,14 @@ export class GameView {
       o.root.visible = true; o.animId++; o.place(L.DECK_POS.x, 0.05 + (k++) * 0.006, L.DECK_POS.z); o.setFaceUp(false); o.arc = 0;
       o.age = CARD[s.card].age; ids.push(s.card);
     }
+    // face textures are drawn lazily; do the face-up ones a card per frame while the deck shuffles rather than all in the first deal frame
+    const warm = this._warmFaces(state.structure.filter(s => s.up).map(s => s.card));
     await this.tweens.wait(0.35 / this.speed);
     this.audio?.play('shuffle');
     // shuffle wobble
     await this.tweens.run(0.5, (kk) => { for (const id of ids) { const o = this.cards.get(id); o.wobble = Math.sin(kk * 40 + o.pos.y * 100) * 0.03 * (1 - kk); } }, { ease: ease.linear });
     for (const id of ids) this.cards.get(id).wobble = 0;
+    await warm;
     const order = state.structure.map((s, i) => i).sort((a, b) => state.structure[a].row - state.structure[b].row || a - b);
     const ps = [];
     order.forEach((si, n) => {
@@ -386,6 +392,14 @@ export class GameView {
     });
     await Promise.all(ps);
     await this.syncAll(state);
+  }
+
+  /** Draw + upload card-face textures one per frame (yielding a frame via the tween loop) so no single frame eats the whole batch. */
+  async _warmFaces(ids) {
+    for (const id of ids) {
+      this.stage.renderer.initTexture(this.tex.card(id));
+      await this.tweens.wait(0.0001);
+    }
   }
 
   setActivePlayer(p) { this.spotX = p === 0 ? -3 : 3; }
@@ -461,6 +475,8 @@ export class GameView {
   async play(events, state) {
     this.state = state;
     const wait = s => this.tweens.wait(s / this.speed);
+    // the last wonder pick arrives as [draft, ageStart, turn] against the final state, pyramid included
+    this.dealPending = events.some(ev => ev.t === 'ageStart');
     for (const ev of events) {
       switch (ev.t) {
         case 'ageStart': await this.dealAge(state); break;
