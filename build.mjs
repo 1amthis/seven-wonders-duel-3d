@@ -1,7 +1,7 @@
 // Build script: bundles src/main.js (+three.js) and src/styles.css into dist/,
 // and also emits a single self-contained HTML file that can be opened by double-click.
 import * as esbuild from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync } from 'node:fs';
 
 const serve = process.argv.includes('--serve');
 const watch = process.argv.includes('--watch') || serve;
@@ -30,6 +30,14 @@ const shell = (js, css, inline) => `<!DOCTYPE html>
 <meta property="og:title" content="Seven Wonders Duel 3D · Play free in your browser">
 <meta property="og:description" content="The two-player card game in 3D: all 73 buildings, twelve wonder miniatures, an AI opponent and a generative soundtrack. Everything is procedural, nothing to download.">
 <meta property="og:url" content="${SITE_URL}">
+<meta property="og:image" content="${SITE_URL}og-image.jpg">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Seven Wonders Duel 3D: miniature wonders rising from a felt table under a night sky">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Seven Wonders Duel 3D · Play free in your browser">
+<meta name="twitter:description" content="The two-player card game in 3D: all 73 buildings, twelve wonder miniatures, an AI opponent and a generative soundtrack. Nothing to download.">
+<meta name="twitter:image" content="${SITE_URL}og-image.jpg">
 <link rel="icon" href="data:image/svg+xml,${FAVICON}">
 ${inline ? `<style>${css}</style>` : '<link rel="stylesheet" href="game.css">'}
 </head>
@@ -62,6 +70,7 @@ function emit() {
   const css = readFileSync('dist/game.css', 'utf8');
   writeFileSync('dist/index.html', shell(js, css, false));
   writeFileSync('dist/seven-wonders-duel-3d.html', shell(js, css, true));
+  if (existsSync('public')) cpSync('public', 'dist', { recursive: true }); // static files served as-is (link-preview image)
 }
 
 const emitPlugin = {
