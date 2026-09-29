@@ -1,0 +1,24 @@
+{
+  "name": "seven-wonders-duel-3d",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --serve",
+    "test": "node tests/rules.test.mjs && node tests/engine.test.mjs",
+    "tune": "node tests/tune.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "7 Wonders Duel — a 3D fan tribute",
+  "dependencies": {
+    "@fontsource/cinzel": "^5.3.0",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "esbuild": "^0.28.2",
+    "three": "^0.186.1"
+  },
+  "type": "module",
+  "devDependencies": {
+    "puppeteer-core": "^24.43.1"
+  }
+}
