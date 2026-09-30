@@ -1,6 +1,7 @@
 // Modal dialogs: title menu, pause, rules, settings, starter choice, discard picker, final scoreboard.
 import { iconHTML, cardURL } from './icons.js';
 import { CARD, COLOR_HEX } from '../engine/data.js';
+import { isTouch } from './hud.js';
 
 const $ = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 
@@ -12,7 +13,7 @@ const addRow = (opts, text, el) => { const l = $('label', '', text); opts.append
 
 export const PREFS_KEY = 'sw-duel-3d-prefs';
 export function loadPrefs() {
-  const d = { mode: 'ai', level: 'normal', name: 'You', rival: 'Rival', first: 'random', seed: '', quality: 'high', master: 0.8, music: 0.5, sfx: 0.9, speed: 1, muted: false };
+  const d = { mode: 'ai', level: 'normal', name: 'You', rival: 'Rival', first: 'random', seed: '', quality: isTouch() ? 'medium' : 'high', master: 0.8, music: 0.5, sfx: 0.9, speed: 1, muted: false };
   try { return { ...d, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return d; }
 }
 export function savePrefs(p) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* ignore */ } }
@@ -45,10 +46,10 @@ export class Dialogs {
     return new Promise(resolve => {
       const p = $('div', 'panel');
       const w = $('div', 'menu-wrap');
-      w.innerHTML = `<div class="title-small">A 3D TRIBUTE TO</div>
+      w.innerHTML = `<div class="menu-title"><div class="title-small">A 3D TRIBUTE TO</div>
         <div class="title-big">SEVEN WONDERS</div>
-        <div class="title-big" style="font-size:clamp(24px,min(4.6vw,6.6vh),64px);letter-spacing:.7em;margin-right:-.7em">DUEL</div>
-        <div class="title-sub">Two rival civilisations. Three ages. One legacy.</div>`;
+        <div class="title-big duel">DUEL</div>
+        <div class="title-sub">Two rival civilisations. Three ages. One legacy.</div></div>`;
       const opts = $('div', 'opts');
       const row = (label, el) => addRow(opts, label, el);
       row('Opponent', this.seg([['ai', 'Computer'], ['hot', 'Two players'], ['spec', 'Watch AI']], prefs.mode, v => { prefs.mode = v; refresh(); }));
@@ -64,7 +65,7 @@ export class Dialogs {
       row('Seed', seed);
       const refresh = () => { const ai = prefs.mode !== 'hot'; diffLabel.style.display = diff.style.display = ai ? '' : 'none'; rival.value = ai ? (prefs.rival === 'Player 2' ? 'Rival' : prefs.rival) : (prefs.rival === 'Rival' ? 'Player 2' : prefs.rival); prefs.rival = rival.value; };
       refresh();
-      const btns = $('div', 'row');
+      const btns = $('div', 'row menu-actions');
       const go = $('button', 'btn big', 'Begin the Duel'); go.onclick = () => { this.click(); this.audio?.init(); this.audio?.resume(); this._close(m); resolve({ action: 'play', prefs }); };
       const rules = $('button', 'btn ghost', 'How to play'); rules.onclick = () => { this.click(); this.rules(); };
       const set = $('button', 'btn ghost', 'Settings'); set.onclick = () => { this.click(); this.settings(prefs); };
@@ -122,7 +123,9 @@ export class Dialogs {
         <h3>Wonders &amp; tokens</h3><p>Hover any wonder or token to read what it does. Some wonders let you play again, destroy a rival card, or revive a discarded one.</p>
         <h3>End scoring</h3><p>Military zone + building VP + wonders + tokens + <b>1 VP per 3 coins</b>. Tie: most blue-card VP.</p>
         <h3>Card colours</h3><div class="legend">${legend}</div>
-        <h3>Controls</h3><ul><li><b>Click</b> a glowing card to select it, then choose an action in the dock (keys <kbd>B</kbd> <kbd>D</kbd> <kbd>W</kbd>).</li><li><b>Drag</b> to orbit · <b>right-drag</b> to pan · <b>wheel</b> to zoom.</li><li><kbd>1</kbd>–<kbd>6</kbd> camera views · <kbd>L</kbd> log · <kbd>M</kbd> mute · <kbd>Esc</kbd> menu.</li></ul></div>`;
+        <h3>Controls</h3>${isTouch()
+    ? `<ul><li><b>Tap</b> a glowing card to select it, then choose an action in the bar that appears.</li><li><b>Press and hold</b> a card, wonder or token to read what it does.</li><li><b>Drag</b> to orbit · <b>pinch</b> to zoom · <b>two fingers</b> to pan.</li><li>The buttons along the screen edge switch camera views, open the log and the menu. <b>Tap a player's panel</b> to see their science, resources and progress tokens.</li></ul></div>`
+    : `<ul><li><b>Click</b> a glowing card to select it, then choose an action in the dock (keys <kbd>B</kbd> <kbd>D</kbd> <kbd>W</kbd>).</li><li><b>Drag</b> to orbit · <b>right-drag</b> to pan · <b>wheel</b> to zoom.</li><li><kbd>1</kbd>–<kbd>6</kbd> camera views · <kbd>L</kbd> log · <kbd>M</kbd> mute · <kbd>Esc</kbd> menu.</li></ul></div>`}`;
       const b = $('div', 'row'); const ok = $('button', 'btn', 'To the table'); ok.onclick = () => { this.click(); this._close(m); resolve(); }; b.appendChild(ok); p.appendChild(b);
       const m = this._open(p, { esc: () => { this._close(m); resolve(); } });
     });

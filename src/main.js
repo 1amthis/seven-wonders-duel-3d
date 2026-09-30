@@ -8,6 +8,7 @@ import { GameAudio } from './audio.js';
 import { installDebug } from './debug.js';
 import { chooseAction } from './engine/ai.js';
 import * as rules from './engine/rules.js';
+import * as data from './engine/data.js';
 
 // QA switch: drive requestAnimationFrame from a worker so the game keeps running while the preview pane is hidden.
 if (new URLSearchParams(location.search).get('raf') === 'worker') {
@@ -23,16 +24,22 @@ async function boot() {
   const audio = new GameAudio();
   const stage = new Stage(document.getElementById('stage'));
   stage.viewInsets = { top: 100, bottom: 34 };
-  stage.getInsets = () => ({ top: (document.querySelector('.topbar')?.offsetHeight || 92) + 6, bottom: 34 });
+  stage.getInsets = () => {
+    const tb = document.querySelector('.toolbar')?.getBoundingClientRect();
+    const bar = tb && tb.width > innerWidth * 0.5; // the phone toolbar is a full-width bar along the bottom; elsewhere it floats in a corner
+    return { top: (document.querySelector('.topbar')?.offsetHeight || 92) + 6, bottom: bar ? Math.round(innerHeight - tb.top) + 4 : 34 };
+  };
   const view = new GameView(stage, audio);
   view.init();
   const hud = new HUD(document.getElementById('hud'), {});
+  // the top bar changes height with the screen size (and when a counter wraps): keep the camera framing in step
+  if (window.ResizeObserver) { let raf = 0; new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => stage.resize()); }).observe(document.querySelector('.topbar')); }
   const dialogs = new Dialogs(document.getElementById('overlay'), audio);
   const prefs = loadPrefs();
   const game = new Game({ stage, view, hud, dialogs, audio, prefs });
   window.__duel = { game, stage, view, hud, audio };
   game.applyPrefs();
-  if (new URLSearchParams(location.search).has('debug') || location.hostname === 'localhost') { installDebug(stage); window.__ai = chooseAction; window.__engine = rules; }
+  if (new URLSearchParams(location.search).has('debug') || location.hostname === 'localhost') { installDebug(stage); window.__ai = chooseAction; window.__engine = rules; window.__data = data; }
   stage.renderer.setAnimationLoop(() => stage.frame());
   const unlock = () => { audio.init(); audio.resume(); if (!game.running) audio.startMusic?.('menu'); removeEventListener('pointerdown', unlock); };
   addEventListener('pointerdown', unlock);

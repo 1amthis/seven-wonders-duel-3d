@@ -2,7 +2,7 @@
 @import './hud.css';
 :root{--gold:#f0c85a;--gold-d:#9a6f1e;--ink:#120c06;--parch:#ecdcb4;--p0:#4db3ff;--p1:#ff6b4a}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:#07050c;overflow:hidden;color:#f2e4bc;font-family:'Cormorant Garamond',Georgia,serif;-webkit-font-smoothing:antialiased}
+html,body{margin:0;height:100%;background:#07050c;overflow:hidden;overscroll-behavior:none;color:#f2e4bc;font-family:'Cormorant Garamond',Georgia,serif;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
 #app{position:fixed;inset:0}
 #stage{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none;touch-action:none}
 .about{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
@@ -10,7 +10,8 @@ html,body{margin:0;height:100%;background:#07050c;overflow:hidden;color:#f2e4bc;
 #loader.done{opacity:0;pointer-events:none}
 .loader-inner{text-align:center}
 .loader-sun{width:84px;height:84px;margin:0 auto 24px;border-radius:50%;background:radial-gradient(circle,#fff3b8,#f0c85a 45%,#9a6f1e 70%,transparent 72%);box-shadow:0 0 60px #f0c85a99;animation:pulse 1.8s ease-in-out infinite}
-.loader-title{font-family:'Cinzel',serif;font-weight:800;font-size:38px;letter-spacing:.35em;color:#f6dc8c;text-shadow:0 0 24px #f0c85a66}
-.loader-sub{margin-top:12px;font-style:italic;font-size:20px;color:#b9a67c}
+.loader-inner{max-width:92vw}
+.loader-title{font-family:'Cinzel',serif;font-weight:800;font-size:clamp(22px,7vw,38px);letter-spacing:.3em;margin-right:-.3em;color:#f6dc8c;text-shadow:0 0 24px #f0c85a66}
+.loader-sub{margin-top:12px;font-style:italic;font-size:clamp(16px,4.6vw,20px);color:#b9a67c}
 @keyframes pulse{50%{transform:scale(1.12);box-shadow:0 0 90px #f0c85acc}}
 #hud,#overlay{position:absolute;inset:0;pointer-events:none}

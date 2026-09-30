@@ -64,7 +64,7 @@ export const shell = (js, css, inline) => `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${TITLE}</title>
 <meta name="description" content="${DESCRIPTION}">
 <meta name="theme-color" content="#120d08">
