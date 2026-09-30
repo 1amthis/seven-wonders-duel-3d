@@ -6,7 +6,7 @@ export const SITE_URL = 'https://1amthis.github.io/seven-wonders-duel-3d/';
 export const REPO_URL = 'https://github.com/1amthis/seven-wonders-duel-3d';
 export const TITLE = 'Seven Wonders Duel 3D · Free browser board game';
 // Google truncates snippets at roughly 160 characters (tests/seo.test.mjs enforces the limit).
-export const DESCRIPTION = 'Play 7 Wonders Duel in 3D, free in your browser: full rules, AI opponent, hot-seat mode and 12 wonder miniatures. No download, no sign-up.';
+export const DESCRIPTION = 'Play 7 Wonders Duel in 3D, free in your browser: full rules, AI opponent, online play with a friend and 12 wonder miniatures. No sign-up.';
 const SOCIAL_TITLE = 'Seven Wonders Duel 3D · Play free in your browser';
 
 // public/favicon.svg is the source of truth. The single-file build inlines it as a data URI so it works offline.
@@ -43,7 +43,7 @@ const ABOUT = `<main class="about">
 <h2>What you can play</h2>
 <ul>
 <li>The full rules: the wonder draft, the three Age pyramids with face-up and face-down cards, all 73 buildings including the guilds, twelve wonders, ten progress tokens, chain building, trading, the conflict pawn with looting tokens, science pairs and the end scoring.</li>
-<li>Three ways to play: against the computer at three difficulty levels (Scribe, Strategos and Pharaoh), against a friend on the same screen, or watching two AIs duel.</li>
+<li>Four ways to play: against the computer at three difficulty levels (Scribe, Strategos and Pharaoh), against a friend on the same screen, online against a friend on another computer or phone (share a short code or link, no account needed), or watching two AIs duel.</li>
 <li>Twelve wonder miniatures that rise from their cards when you build them: the Pyramids, the Great Library, the Hanging Gardens, the Colossus, the Temple of Artemis, the Great Lighthouse, the Mausoleum, the Sphinx, the Circus Maximus, Piraeus, the Statue of Zeus and the Appian Way.</li>
 <li>Card tooltips that show the full effect, the chain symbols and your exact cost, trading included.</li>
 <li>Everything is generated in your browser: the card art, the table, the miniatures and an endless soundtrack. There are no images or audio files to download.</li>

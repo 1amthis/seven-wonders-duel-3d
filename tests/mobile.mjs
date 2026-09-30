@@ -79,6 +79,10 @@ const AUDIT = minTarget => {
 // Scenes run inside the page, in this order; each builds on the previous one.
 const SCENES = {
   title: async () => { /* the menu is up on load */ },
+  // the online screens that need no network: the menu with Online picked, the lobby, and its join form
+  menuOnline: async () => { document.querySelector('.seg').children[2].click(); },
+  lobby: async () => { document.querySelector('.menu-actions .btn.big').click(); },
+  lobbyJoin: async () => { [...document.querySelectorAll('.lobby button')].find(b => /Join a duel/.test(b.textContent)).click(); },
   settings: async () => { const g = __duel.game; g.dialogs.settings(g.prefs); },
   rules: async () => { __duel.game.dialogs.rules(); },
   pause: async () => { __duel.game.dialogs.pause(); },
@@ -133,7 +137,7 @@ const SCENES = {
     g.dialogs.gameOver(s, { names: ['Alexandros', 'Cleopatra'], viewer: 0, mode: 'ai' });
   },
 };
-const ORDER = ['title', 'settings', 'rules', 'pause', 'draft', 'banner', 'tipWonder', 'turn', 'dock', 'dockWonders', 'tipCard', 'log', 'rich', 'drawer', 'drawer1', 'gestures', 'gameOver'];
+const ORDER = ['title', 'menuOnline', 'lobby', 'lobbyJoin', 'settings', 'rules', 'pause', 'draft', 'banner', 'tipWonder', 'turn', 'dock', 'dockWonders', 'tipCard', 'log', 'rich', 'drawer', 'drawer1', 'gestures', 'gameOver'];
 const RESET = ['settings', 'rules', 'pause']; // dialogs stacked on top of the title: close them before the next scene
 
 const gestureProblems = [];
@@ -210,7 +214,7 @@ try {
     console.log(`\n=== ${w}x${h} ===`);
     for (const scene of ORDER) {
       if (DESKTOP && scene === 'gestures') continue;
-      if (ONLY && !ONLY.includes(scene) && !(scene === 'draft' && ONLY.some(s => !['title', 'settings', 'rules', 'pause', 'gameOver'].includes(s)))) continue;
+      if (ONLY && !ONLY.includes(scene) && !(scene === 'draft' && ONLY.some(s => !['title', 'menuOnline', 'lobby', 'lobbyJoin', 'settings', 'rules', 'pause', 'gameOver'].includes(s)))) continue;
       try {
         if (scene === 'draft') {
           const go = await page.$('.btn.big'); await go.tap();
@@ -231,6 +235,10 @@ try {
       for (const p of [...new Set(problems)].slice(0, 12)) console.log('      - ' + p);
       failures += problems.length;
       if (RESET.includes(scene)) await page.evaluate(() => document.getElementById('overlay').lastElementChild?.remove());
+      if (scene === 'lobbyJoin') { // leave the lobby the way a player does (Esc): the title menu comes back, set to "Computer" again for the match scenes
+        await page.keyboard.press('Escape'); await sleep(1800);
+        await page.evaluate(() => document.querySelector('.seg').children[0].click());
+      }
     }
     if (errs.length) { console.log('  page errors:', errs.slice(0, 4)); failures += errs.length; }
     await page.close();

@@ -71,6 +71,31 @@ Every push to `main` runs the tests and redeploys the site through GitHub Action
 Best in a recent Chrome / Edge / Firefox with hardware WebGL 2. Graphics quality (High / Medium / Low) and
 animation speed are in *Settings*; a laptop iGPU should use Medium or Low.
 
+## Play a friend online
+
+Pick **Opponent → Online** in the menu, then either:
+
+* **Host a duel:** you get a five-letter room code and an invite link. Send either to your friend and the duel starts
+  as soon as they join.
+* **Join a duel:** open your friend's link (it goes straight to the join screen) or type their code.
+
+There is no account and no game server. The two browsers connect directly (WebRTC, through the free public
+[PeerJS](https://peerjs.com) matchmaking server and its free relays for strict networks) and each one runs the whole
+game: the only things sent are the seed and names at the start and then every move. The rules engine is deterministic,
+so both copies stay identical, and each move carries a hash of the resulting state so that any drift is noticed and
+repaired from the host's copy. The host picks who begins and the seed; "Rematch" asks the other player and swaps the
+starter.
+
+It is built to survive real networks: a dropped connection is re-dialled automatically and the two sides reconcile their
+move logs, so a move made while offline is not lost. If you **reload the tab**, or your phone throws the page away in the
+background, the duel is saved in the tab's session storage and you are offered to resume it (the guest's invite link
+rejoins on its own while the host's tab is still open). Leaving on purpose tells the other player; a dropped connection
+only shows a "slow" / "offline" badge on their panel. Names typed by the other player are stripped of markup, and a
+move is only accepted if it is legal for the seat it came from.
+
+Good to know: it needs a network that allows WebRTC (almost all do), anyone who has the code can take the empty seat, and
+a determined player could peek at face-down cards with the browser's dev tools, which is fine between friends.
+
 ## What's in the box
 
 * **The full rules** — wonder draft (4 + 4, 1-2-2-1 / 2-1-1-2 order), the three Age structures with
@@ -80,8 +105,8 @@ animation speed are in *Settings*; a laptop iGPU should use Medium or Low.
   Theology, Strategy, the conflict pawn with looting tokens and military zones, science pairs, scientific
   and military supremacy, the "weakest military chooses who opens the next Age" rule, the 7-wonder cap,
   Mausoleum / Great Library / Circus Maximus / Statue of Zeus interactions, end scoring and tie-breaks.
-* **Play against** a computer opponent (three levels), a friend on the same screen (hot-seat), or just
-  **watch two AIs** duel.
+* **Play against** a computer opponent (three levels), a friend on the same screen (hot-seat), a friend
+  **online** on their own computer or phone, or just **watch two AIs** duel.
 * **A table worth looking at** — felt play-mat with embroidered zones, carved wooden frame with gold inlay,
   a gilded military track with two citadels and a bronze conflict pawn, flickering braziers, a night sky
   with a moon, embers and dust motes, ACES tone-mapping, bloom, soft shadows and a filmic grade.
@@ -119,14 +144,20 @@ src/gfx/      stage.js (renderer, post-fx, camera) · view.js (state → 3D + ch
               cardart.js / scenes.js / glyphs.js (procedural art) · wonders3d.js (12 miniatures) · fx.js
 src/ui/       hud.js · dialogs.js · icons.js        src/audio.js  procedural sound & music
 src/game.js   controller wiring engine ↔ AI ↔ 3D ↔ HUD
-tests/        engine.test.mjs (rules + self-play), seo.test.mjs (page metadata), tune.mjs (AI weight tuning), headless UI scenarios
+src/net/      protocol.js (room codes, move validation, MatchSync: the deterministic two-copy sync; no network, unit-tested)
+              room.js (PeerJS link: heartbeat, reconnection) · online.js (game-side controller, session saving)
+src/ui/lobby.js  host / join / resume dialogs
+tests/        engine.test.mjs (rules + self-play), net.test.mjs (online sync), seo.test.mjs (page metadata), tune.mjs (AI weight tuning), headless UI scenarios
 site.mjs      HTML shell: meta tags, structured data, crawlable text, sitemap (used by build.mjs)
 public/       static files copied into dist/ (link-preview image, favicons)      docs/screenshots/  README images
 ```
 
-`npm test` runs the rules engine through 300 random games plus AI-vs-AI games and unit checks on costs, then
+`npm test` runs the rules engine through 300 random games plus AI-vs-AI games and unit checks on costs, plays whole
+duels between two simulated online players over a link that drops and reconnects (`tests/net.test.mjs`), then
 checks the page's SEO basics (title and description length, one `<h1>`, canonical and social tags, icons, sitemap).
 `tests/*.mjs` scenario scripts drive the real UI in headless Edge/Chrome through `puppeteer-core`.
+`npm run test:online` (after `npm run build`) opens two headless browsers that really connect over WebRTC through a local
+signalling server, plays moves on both, drops the connection, reloads each tab and plays a match through to a rematch.
 `npm run test:mobile` (dev server on :5173) walks the game on emulated phones and tablets and fails if the HUD or a dialog
 leaves the screen, text is clipped, touch targets are too small, panels overlap, or a tap, press-and-hold or pinch misbehaves.
 The README screenshots and the link-preview image are generated by `npm run build && node tests/docshots.mjs`,
