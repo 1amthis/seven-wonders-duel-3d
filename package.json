@@ -29,6 +29,7 @@
     "build": "node build.mjs",
     "dev": "node build.mjs --serve",
     "test": "node tests/rules.test.mjs && node tests/engine.test.mjs && node tests/seo.test.mjs",
+    "test:mobile": "node tests/mobile.mjs",
     "tune": "node tests/tune.mjs"
   },
   "dependencies": {

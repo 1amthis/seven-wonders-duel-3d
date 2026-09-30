@@ -40,6 +40,8 @@ const GrainShader = {
     }`,
 };
 
+const HOLD_MS = 380; // a finger held still this long inspects instead of tapping
+
 export class Stage {
   constructor(canvas) {
     this.canvas = canvas;
@@ -96,12 +98,16 @@ export class Stage {
   resize() {
     const w = this.forceSize?.w || this.canvas.clientWidth || innerWidth, h = this.forceSize?.h || this.canvas.clientHeight || innerHeight;
     const pr = this.pixelRatio || Math.min(devicePixelRatio, 1.5);
-    this.renderer.setPixelRatio(pr);
-    this.renderer.setSize(w, h, false);
-    this.composer.setPixelRatio(pr); this.composer.setSize(w, h);
-    this.bloom.setSize(w * pr / 2, h * pr / 2);
+    if (w !== this.w || h !== this.h || pr !== this._pr) { // the render targets are expensive: only touch them when the size really changed
+      this.renderer.setPixelRatio(pr);
+      this.renderer.setSize(w, h, false);
+      this.composer.setPixelRatio(pr); this.composer.setSize(w, h);
+      this.bloom.setSize(w * pr / 2, h * pr / 2);
+      this._pr = pr;
+    }
     this.camera.aspect = w / h;
     this.w = w; this.h = h;
+    this.portrait = w < h; // a phone held upright: the table is far wider than the screen
     // vertical shift to account for HUD bars
     if (this.getInsets) this.viewInsets = this.getInsets();
     const shift = (this.viewInsets.top - this.viewInsets.bottom) / 2;
@@ -111,9 +117,15 @@ export class Stage {
     const availH = h - this.viewInsets.top - this.viewInsets.bottom;
     const needW = (TABLE.w + 0.2) / 2 / Math.tan(hfov / 2);
     const needH = ((TABLE.d + 1) * 0.81) / (2 * Math.tan(vfov / 2)) * (h / Math.max(200, availH));
+    const prev = this.fitDist;
     this.fitDist = Math.max(needW, needH);
+    this.tanHalfH = Math.tan(hfov / 2);
     this.camera.updateProjectionMatrix();
+    // Rotating a phone or resizing the window changes every preset's distance: frame the current view again.
+    if (prev && this.viewName && Math.abs(this.fitDist / prev - 1) > 0.02 && this._lastGoto) this.goto(this._lastGoto.name, this._lastGoto.opts);
   }
+  /** Camera distance at which `units` world units span the screen width. */
+  distForWidth(units) { return units / 2 / (this.tanHalfH || 0.5); }
 
   // ------------------------------------------------------------ camera
   goto(name, opts = {}) {
@@ -122,20 +134,24 @@ export class Stage {
     Object.assign(this.goal, { target: P.target.clone(), yaw: fin(P.yaw, this.goal.yaw), pitch: fin(P.pitch, this.goal.pitch), dist: fin(P.dist, this.goal.dist) });
     this.user.yaw = 0; this.user.pitch = 0; this.user.zoom = 1; this.user.pan.set(0, 0, 0);
     this.viewName = opts.name || name;
+    this._lastGoto = { name, opts: { ...opts, snap: false } };
     if (opts.snap) { this.rig.target.copy(this.goal.target); this.rig.yaw = this.goal.yaw; this.rig.pitch = this.goal.pitch; this.rig.dist = this.goal.dist; }
   }
   presets() {
     const f = this.fitDist || 24;
     const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    // Upright phone: the table is ~28 units wide, so "fit the table" shrinks a 1-unit card to ~14px. The close-up views
+    // are instead framed by the width of what they show (pyramid ≈ 7.4 units, a city ≈ 8, four wonders ≈ 8).
+    const near = (k, units) => (this.portrait ? Math.min(f * k, this.distForWidth(units)) : f * k);
     return {
       overview: { target: V(0, 0, -1.2), yaw: 0, pitch: 1.0, dist: f },
-      structure: { target: V(0, 0, 0.2), yaw: 0, pitch: 1.0, dist: f * 0.46 },
-      left: { target: V(-7.4, 0, -1.2), yaw: 0.05, pitch: 1.0, dist: f * 0.5 },
-      right: { target: V(7.4, 0, -1.2), yaw: -0.05, pitch: 1.0, dist: f * 0.5 },
-      wondersLeft: { target: V(-7.9, 0, 3.6), yaw: 0.08, pitch: 0.72, dist: f * 0.42 },
-      wondersRight: { target: V(7.9, 0, 3.6), yaw: -0.08, pitch: 0.72, dist: f * 0.42 },
+      structure: { target: V(0, 0, 0.2), yaw: 0, pitch: 1.0, dist: near(0.46, 9) },
+      left: { target: V(-7.4, 0, -1.2), yaw: 0.05, pitch: 1.0, dist: near(0.5, 9.4) },
+      right: { target: V(7.4, 0, -1.2), yaw: -0.05, pitch: 1.0, dist: near(0.5, 9.4) },
+      wondersLeft: { target: V(-7.9, 0, 3.6), yaw: 0.08, pitch: 0.72, dist: near(0.42, 9.4) },
+      wondersRight: { target: V(7.9, 0, 3.6), yaw: -0.08, pitch: 0.72, dist: near(0.42, 9.4) },
       military: { target: V(0, 0, -6.2), yaw: 0, pitch: 0.85, dist: f * 0.55 },
-      draft: { target: V(0, 0, 0.3), yaw: 0, pitch: 0.95, dist: f * 0.4 },
+      draft: { target: V(0, 0, 0.3), yaw: 0, pitch: 0.95, dist: near(0.4, 6.2) },
       cinematic: { target: V(0, 0.5, -1.4), yaw: 0.6, pitch: 0.42, dist: f * 0.9 },
       low: { target: V(0, 0.5, -1.4), yaw: -0.5, pitch: 0.3, dist: f * 1.1 },
       pawn: { target: V(0, 0, -6.4), yaw: 0, pitch: 0.6, dist: f * 0.34 },
@@ -145,13 +161,31 @@ export class Stage {
 
   _bindInput() {
     const c = this.canvas;
-    let drag = null;
+    const fingers = new Map();          // touches currently down: pointerId → {x, y}
+    let drag = null, pinch = null, hold = null;
+    this.pointerType = 'mouse';
+    this.touchHold = false;             // a finger has been held still: hover tooltips are allowed until it lifts
+    const setPtr = (x, y) => { this.pointer.set((x / this.w) * 2 - 1, -(y / this.h) * 2 + 1); this.pointerPx = { x, y }; };
+    const clearPtr = () => this.pointer.set(-9, -9);
+    const endHold = () => { clearTimeout(hold); hold = null; if (this.touchHold) { this.touchHold = false; clearPtr(); } };
+    const span = () => { const [a, b] = [...fingers.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+    // A finger has no hover. The pointer only exists for picking while a finger is held still (inspect) or at the instant
+    // of a tap, so a touched card never keeps a stale tooltip or lift. Two fingers pinch to zoom and drag to pan.
     c.addEventListener('pointermove', e => {
-      this.pointer.set((e.clientX / this.w) * 2 - 1, -(e.clientY / this.h) * 2 + 1);
-      this.pointerPx = { x: e.clientX, y: e.clientY };
+      this.pointerType = e.pointerType;
+      const f = fingers.get(e.pointerId); if (f) { f.x = e.clientX; f.y = e.clientY; }
+      if (e.pointerType !== 'touch') setPtr(e.clientX, e.clientY);
+      if (pinch && fingers.size >= 2) {
+        const s = span(), k = this.rig.dist * 0.0011;
+        this.user.zoom = Math.max(0.28, Math.min(1.35, pinch.zoom * pinch.d / s.d));
+        this.user.pan.x -= (s.x - pinch.x) * k; this.user.pan.z -= (s.y - pinch.y) * k * 1.4;
+        pinch.x = s.x; pinch.y = s.y;
+        return;
+      }
+      if (this.touchHold) { setPtr(e.clientX, e.clientY); return; } // sliding a held finger inspects whatever it passes over
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+        if (Math.abs(dx) + Math.abs(dy) > (drag.touch ? 8 : 3)) { drag.moved = true; clearTimeout(hold); }
         if (drag.moved) {
           if (drag.button === 2 || e.shiftKey) { // pan
             const k = this.rig.dist * 0.0011;
@@ -162,9 +196,25 @@ export class Stage {
         }
       }
     });
-    const setPtr = e => { this.pointer.set((e.clientX / this.w) * 2 - 1, -(e.clientY / this.h) * 2 + 1); this.pointerPx = { x: e.clientX, y: e.clientY }; };
-    c.addEventListener('pointerdown', e => { setPtr(e); drag = { x: e.clientX, y: e.clientY, button: e.button, moved: false }; try { c.setPointerCapture(e.pointerId); } catch { /* synthetic events */ } });
-    c.addEventListener('pointerup', e => { const was = drag; drag = null; setPtr(e); if (was && !was.moved && e.button === 0) this.onClick?.(e); });
+    c.addEventListener('pointerdown', e => {
+      this.pointerType = e.pointerType;
+      try { c.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+      if (e.pointerType !== 'touch') { setPtr(e.clientX, e.clientY); drag = { x: e.clientX, y: e.clientY, button: e.button, moved: false }; return; }
+      fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (fingers.size === 2) { endHold(); drag = null; const s = span(); pinch = { d: s.d, x: s.x, y: s.y, zoom: this.user.zoom }; return; }
+      if (fingers.size > 2) return;
+      drag = { x: e.clientX, y: e.clientY, button: 0, moved: false, touch: true, t: e.timeStamp };
+      hold = setTimeout(() => { if (drag && !drag.moved) { this.touchHold = true; setPtr(drag.x, drag.y); } }, HOLD_MS);
+    });
+    c.addEventListener('pointerup', e => {
+      if (e.pointerType !== 'touch') { const was = drag; drag = null; setPtr(e.clientX, e.clientY); if (was && !was.moved && e.button === 0) this.onClick?.(e); return; }
+      fingers.delete(e.pointerId);
+      if (pinch) { if (fingers.size < 2) pinch = null; drag = null; return; } // a finger leaving a pinch is not a tap
+      const was = drag, held = this.touchHold && !(was && e.timeStamp - was.t < HOLD_MS); // on a slow phone the timer can run before the release is handled
+      drag = null; endHold();
+      if (!held && was && !was.moved) { setPtr(e.clientX, e.clientY); this.onClick?.(e); clearPtr(); }
+    });
+    c.addEventListener('pointercancel', e => { fingers.delete(e.pointerId); if (fingers.size < 2) pinch = null; drag = null; endHold(); });
     c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') this.pointer.set(-9, -9); });
     c.addEventListener('contextmenu', e => e.preventDefault());
     c.addEventListener('wheel', e => { e.preventDefault(); this.user.zoom = Math.max(0.28, Math.min(1.35, this.user.zoom * Math.exp(e.deltaY * 0.001))); }, { passive: false });

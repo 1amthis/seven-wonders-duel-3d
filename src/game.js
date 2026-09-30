@@ -5,7 +5,7 @@ import { chooseAction } from './engine/ai.js';
 import { CARD, WONDER, TOKEN, COLOR_HEX, COLOR_NAME } from './engine/data.js';
 import { longEffect, shortEffect, chainInfo, SCI_NAME } from './engine/describe.js';
 import { cardCanvas, wonderURL, tokenURL, iconHTML } from './ui/icons.js';
-import { ROMAN } from './ui/hud.js';
+import { ROMAN, isTouch } from './ui/hud.js';
 import { hashStr } from './gfx/draw.js';
 import { savePrefs } from './ui/dialogs.js';
 
@@ -15,7 +15,7 @@ const coinsTxt = n => `${n} coin${n === 1 ? '' : 's'}`;
 export class Game {
   constructor({ stage, view, hud, dialogs, audio, prefs }) {
     Object.assign(this, { stage, view, hud, dialogs, audio, prefs });
-    this.baseView = 'overview'; this.state = null; this.humans = [true, false]; this.paused = false; this.abort = 0; this.mode = null; this.sel = null; this.running = false;
+    this.pickedView = null; this.state = null; this.humans = [true, false]; this.paused = false; this.abort = 0; this.mode = null; this.sel = null; this.running = false;
     view.hoverFilter = info => this.inspectable(info);
     view.liftFilter = info => this.liftable(info);
     view.clickable = info => this.isClickable(info);
@@ -50,6 +50,9 @@ export class Game {
     });
   }
 
+  /** The camera view the game returns to between moves: whatever the player picked, else the whole table (desktop and
+   *  landscape) or the card pyramid (portrait, where the whole table would be a strip of unreadable 12px cards). */
+  get baseView() { return this.pickedView || (this.stage.portrait ? 'structure' : 'overview'); }
   dialogOpen() { return this.dialogs.overlay.children.length > 0; }
   viewer() { const s = this.state; return this.humans[0] && this.humans[1] ? (s?.pending?.player ?? 0) : 0; }
   sleep(ms) { return this.view.tweens.wait(ms / 1000); }
@@ -140,7 +143,7 @@ export class Game {
     let pr = Promise.resolve();
     for (const ev of events) {
       if (ev.t === 'ageEnd') pr = this.hud.banner(`AGE ${ROMAN[ev.age]} COMPLETE`, '', 2000);
-      if (ev.t === 'ageStart') { this.audio?.play('ageStart'); pr = this.hud.banner(`AGE ${ROMAN[ev.age]}`, ['', 'The Dawn of Cities', 'The Age of Merchants', 'The Age of Empires'][ev.age], 3200); this.stage.goto('overview'); }
+      if (ev.t === 'ageStart') { this.audio?.play('ageStart'); pr = this.hud.banner(`AGE ${ROMAN[ev.age]}`, ['', 'The Dawn of Cities', 'The Age of Merchants', 'The Age of Empires'][ev.age], 3200); this.stage.goto(this.baseView); }
       if (ev.t === 'again') pr = Promise.resolve();
     }
     return pr;
@@ -215,7 +218,7 @@ export class Game {
         case 'draft':
           this.stage.goto('draft');
           for (const id of st.draft.pool) this.view.setGlow(id, 0xffd36a, 0.85);
-          this.hud.hint(`${who}Choose a <b>Wonder</b> · hover to inspect`, actor);
+          this.hud.hint(`${who}Choose a <b>Wonder</b> · ${isTouch() ? 'press and hold' : 'hover'} to inspect`, actor);
           break;
         case 'turn': this.enterTurn(); break;
         case 'token': case 'library': {
@@ -351,7 +354,8 @@ export class Game {
 
   // ================================================================== tooltips
   onHover(info, px, still) {
-    if (!info || this.dialogOpen()) { this.hud.hideTip(); return; }
+    // A finger has no hover: the tooltip belongs to a press-and-hold (stage.touchHold), never to a plain tap.
+    if (!info || this.dialogOpen() || (this.stage.pointerType === 'touch' && !this.stage.touchHold)) { this.hud.hideTip(); return; }
     if (still) { this.hud.moveTip(px); return; }
     const node = this.buildTip(info);
     if (node) this.hud.showTip(node, px); else this.hud.hideTip();
@@ -369,7 +373,7 @@ export class Game {
     if (info.type === 'card') {
       const def = CARD[info.id];
       const wrap = document.createElement('div'); wrap.style.display = 'contents';
-      const cv = cardCanvas(def, 0.5); cv.style.width = '250px'; cv.style.height = 'auto';
+      const cv = cardCanvas(def, 0.5);
       const t = document.createElement('div'); t.className = 'tt';
       let html = `<h4>${def.name}</h4><div class="kind">${COLOR_NAME[def.color]} · Age ${ROMAN[def.age]}</div>`;
       html += longEffect(def).map(l => `<p>${l}</p>`).join('');
@@ -387,8 +391,8 @@ export class Game {
       const w = st.players[0].wonders.concat(st.players[1].wonders).find(x => x.id === info.id);
       const owner = st.players[0].wonders.includes(w) ? 0 : st.players[1].wonders.includes(w) ? 1 : -1;
       const wrap = document.createElement('div'); wrap.className = 'wide'; wrap.style.display = 'contents';
-      const box = document.createElement('div'); box.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%';
-      const img = new Image(); img.src = wonderURL(info.id, 0.6); img.className = 'big'; img.style.width = '100%';
+      const box = document.createElement('div'); box.className = 'tipbox';
+      const img = new Image(); img.src = wonderURL(info.id, 0.6); img.className = 'big wonder';
       const t = document.createElement('div'); t.className = 'tt';
       let html = `<h4>${def.name}</h4><div class="kind">Wonder · ${def.vp} victory point${def.vp === 1 ? '' : 's'}${owner >= 0 ? ' · ' + st.players[owner].name : ' · Unclaimed'}</div><p>${def.text}</p>`;
       if (w) html += w.built ? `<p class="chain">Built ✔</p>` : w.lost ? `<p class="chain">Lost — seven wonders already stand.</p>` : owner === viewer ? (() => { const c = computeCost(st, owner, { kind: 'wonder', id: info.id }); const h = this.costHTML(c); return `<div class="cost ${h.ok ? 'ok' : 'no'}">Your cost: ${h.html}</div>`; })() : '';
@@ -416,7 +420,7 @@ export class Game {
     this.audio?.play('click');
     const s = this.state, v = this.viewer();
     const mine = v === 0 ? 'left' : 'right', rival = v === 0 ? 'right' : 'left';
-    const cam = name => { this.baseView = name; this.stage.goto(name); };
+    const cam = name => { this.pickedView = name; this.stage.goto(name); };
     switch (id) {
       case 'overview': cam('overview'); break;
       case 'structure': cam('structure'); break;

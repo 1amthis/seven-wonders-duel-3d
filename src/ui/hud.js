@@ -7,6 +7,12 @@ import { SCI_NAME } from '../engine/describe.js';
 const $ = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 export const ROMAN = ['', 'I', 'II', 'III'];
 
+// Phones in either orientation. Keep in sync with the "compact" media query in hud.css.
+export const COMPACT_MQ = '(max-width:720px), (max-height:500px)';
+export const isCompact = () => matchMedia(COMPACT_MQ).matches;
+/** True on devices whose main pointer is a finger: there is no hover, so tooltips come from a press-and-hold. */
+export const isTouch = () => matchMedia('(pointer:coarse)').matches;
+
 export class HUD {
   constructor(root, handlers) {
     this.root = root; this.h = handlers;
@@ -28,9 +34,8 @@ export class HUD {
           <div class="stat shield" title="Shields on military buildings"><span class="si"></span><b>0</b></div>
           <div class="stat wonders" title="Wonders built"><span class="si"></span><b>0</b></div>
         </div>
-        <div class="pc-sci"></div>
-        <div class="pc-prod"></div>
-        <div class="pc-tok"></div>`;
+        <div class="pc-more"><div class="pc-sci"></div><div class="pc-prod"></div><div class="pc-tok"></div></div>`;
+      el.addEventListener('click', () => { const open = !el.classList.contains('open'); this.els.p.forEach(p => p.classList.remove('open')); el.classList.toggle('open', open); });
       el.querySelector('.coins .si').innerHTML = iconHTML('coin', 26);
       el.querySelector('.vp .si').innerHTML = iconHTML('vp', 26);
       el.querySelector('.shield .si').innerHTML = iconHTML('shield', 24);
@@ -62,6 +67,14 @@ export class HUD {
       btn('wonders', '✦', 'Wonders (5)'), btn('military', '⚔', 'Military track (6)'), btn('log', '≡', 'Toggle event log (L)'), btn('photo', '📷', 'Save a screenshot of the table (P)'),
       btn('sound', '♪', 'Sound on/off (M)'), btn('menu', '☰', 'Menu (Esc)'));
     r.appendChild(tb); this.els.toolbar = tb;
+
+    // The cartouche drawers close when anything else is touched.
+    if (!this._outside) {
+      this._outside = e => { if (!e.target.closest?.('.pcard')) this.els.p?.forEach(p => p.classList.remove('open')); };
+      addEventListener('pointerdown', this._outside);
+    }
+    // Phone layouts hang the hint, ticker, log and tooltip off the bottom of the top bar, whose height depends on the screen.
+    if (window.ResizeObserver) { this._ro?.disconnect(); this._ro = new ResizeObserver(() => { this.topH = Math.ceil(top.getBoundingClientRect().bottom); r.style.setProperty('--top-h', this.topH + 'px'); }); this._ro.observe(top); }
   }
 
   // ------------------------------------------------------------------ state
@@ -137,33 +150,41 @@ export class HUD {
       clearTimeout(this._tt); this._tt = setTimeout(() => t.classList.remove('show'), 3800);
     }
   }
-  toggleLog() { this.els.log.classList.toggle('open'); }
+  toggleLog() { const open = this.els.log.classList.toggle('open'); this.root.classList.toggle('logopen', open); }
 
   // ------------------------------------------------------------------ tooltip
   showTip(node, px) {
     const t = this.els.tip;
     t.innerHTML = ''; t.appendChild(node); t.classList.remove('hidden'); t.classList.toggle('wide', !!node.dataset.wide);
-    const W = innerWidth, H = innerHeight;
-    const r = t.getBoundingClientRect();
-    let x = px.x + 26, y = px.y - r.height / 2;
-    if (x + r.width > W - 12) x = px.x - r.width - 26;
-    y = Math.max(96, Math.min(H - r.height - 12, y));
-    t.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    this._placeTip(px);
   }
-  moveTip(px) {
-    const t = this.els.tip; if (t.classList.contains('hidden')) return;
-    const W = innerWidth, H = innerHeight, r = t.getBoundingClientRect();
-    let x = px.x + 26, y = px.y - r.height / 2;
-    if (x + r.width > W - 12) x = px.x - r.width - 26;
-    y = Math.max(96, Math.min(H - r.height - 12, y));
+  moveTip(px) { if (!this.els.tip.classList.contains('hidden')) this._placeTip(px); }
+  _placeTip(px) {
+    const t = this.els.tip, W = innerWidth, H = innerHeight, r = t.getBoundingClientRect();
+    let x, y;
+    if (isCompact()) {
+      // A finger hides what is under it and a phone has no room beside it: centre the tip and park it in the half of
+      // the screen the finger is not in, clear of the top bar and of the toolbar when that is a bar along the bottom.
+      const tb = this.els.toolbar.getBoundingClientRect();
+      const floor = tb.width > W * 0.5 ? tb.top - 8 : H - 8, ceil = (this.topH || 60) + 6;
+      x = (W - r.width) / 2;
+      const hr = this.els.hint.getBoundingClientRect(), hintBelowBar = this.els.hint.classList.contains('show') && hr.bottom < H * 0.5 ? hr.bottom + 6 : ceil; // the phone hint hangs under the top bar
+      y = px.y < H * 0.5 ? floor - r.height : hintBelowBar;
+      y = Math.max(ceil, Math.min(floor - r.height, y));
+    } else {
+      x = px.x + 26; y = px.y - r.height / 2;
+      if (x + r.width > W - 12) x = px.x - r.width - 26;
+      y = Math.max(96, Math.min(H - r.height - 12, y));
+    }
+    x = Math.max(8, Math.min(W - r.width - 8, x));
     t.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   }
   hideTip() { this.els.tip.classList.add('hidden'); }
 
   // ------------------------------------------------------------------ dock
-  hideDock() { this.els.dock.classList.add('hidden'); this.els.dock.innerHTML = ''; }
+  hideDock() { this.els.dock.classList.add('hidden'); this.els.dock.innerHTML = ''; this.root.classList.remove('docked'); }
   showDock(spec) {
-    const d = this.els.dock; d.innerHTML = '';
+    const d = this.els.dock; d.innerHTML = ''; this.root.classList.add('docked');
     const head = $('div', 'dk-head');
     head.innerHTML = `<div class="dk-name">${spec.title}</div><div class="dk-sub">${spec.subtitle || ''}</div>`;
     const x = $('button', 'dk-x', '✕'); x.title = 'Deselect (Esc)'; x.onclick = spec.onCancel; head.appendChild(x);
