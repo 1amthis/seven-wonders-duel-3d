@@ -6,6 +6,7 @@ import { Dialogs, loadPrefs } from './ui/dialogs.js';
 import { Game } from './game.js';
 import { GameAudio } from './audio.js';
 import { installDebug } from './debug.js';
+import { parseCode } from './net/protocol.js';
 import { chooseAction } from './engine/ai.js';
 import * as rules from './engine/rules.js';
 import * as data from './engine/data.js';
@@ -46,7 +47,7 @@ async function boot() {
   document.getElementById('loader').classList.add('done');
   const q = new URLSearchParams(location.search);
   if (q.get('auto')) { prefs.mode = 'spec'; prefs.speed = +(q.get('speed') || 3); prefs.level = q.get('level') || 'normal'; if (q.get('quality')) prefs.quality = q.get('quality'); game.applyPrefs(); audio.init(); game.startMatch(); }
-  else game.showTitle();
+  else { game.linkJoin = parseCode(q.get('join')); game.showTitle(); } // an invite link opens straight on the "join" screen
 }
 boot().catch(e => {
   console.error(e); document.title = 'ERR ' + e.message;

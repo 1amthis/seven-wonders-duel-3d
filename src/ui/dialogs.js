@@ -3,7 +3,7 @@ import { iconHTML, cardURL } from './icons.js';
 import { CARD, COLOR_HEX } from '../engine/data.js';
 import { isTouch } from './hud.js';
 
-const $ = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+export const $ = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 
 // Ties a <label> to its <input> so screen readers (and Lighthouse) can name the field.
 let fieldId = 0;
@@ -52,7 +52,7 @@ export class Dialogs {
         <div class="title-sub">Two rival civilisations. Three ages. One legacy.</div></div>`;
       const opts = $('div', 'opts');
       const row = (label, el) => addRow(opts, label, el);
-      row('Opponent', this.seg([['ai', 'Computer'], ['hot', 'Two players'], ['spec', 'Watch AI']], prefs.mode, v => { prefs.mode = v; refresh(); }));
+      row('Opponent', this.seg([['ai', 'Computer'], ['hot', 'Same screen'], ['online', 'Online'], ['spec', 'Watch AI']], prefs.mode, v => { prefs.mode = v; refresh(); }));
       const diffLabel = $('label', '', 'Difficulty');
       const diff = this.seg([['easy', 'Scribe'], ['normal', 'Strategos'], ['hard', 'Pharaoh']], prefs.level, v => { prefs.level = v; });
       opts.append(diffLabel, diff);
@@ -63,10 +63,15 @@ export class Dialogs {
       row('Who begins', this.seg([['random', 'Random'], ['me', 'Me'], ['rival', 'Rival']], prefs.first, v => { prefs.first = v; }));
       const seed = $('input'); seed.type = 'text'; seed.placeholder = 'random'; seed.value = prefs.seed; seed.oninput = () => { prefs.seed = seed.value; };
       row('Seed', seed);
-      const refresh = () => { const ai = prefs.mode !== 'hot'; diffLabel.style.display = diff.style.display = ai ? '' : 'none'; rival.value = ai ? (prefs.rival === 'Player 2' ? 'Rival' : prefs.rival) : (prefs.rival === 'Rival' ? 'Player 2' : prefs.rival); prefs.rival = rival.value; };
-      refresh();
+      const refresh = () => {
+        const online = prefs.mode === 'online', ai = prefs.mode !== 'hot';
+        diffLabel.style.display = diff.style.display = ai && !online ? '' : 'none';
+        rivalLabel.style.display = rival.style.display = online ? 'none' : ''; // the other player types their own name
+        if (!online) { rival.value = ai ? (prefs.rival === 'Player 2' ? 'Rival' : prefs.rival) : (prefs.rival === 'Rival' ? 'Player 2' : prefs.rival); prefs.rival = rival.value; }
+        go.textContent = online ? 'Play online' : 'Begin the Duel';
+      };
       const btns = $('div', 'row menu-actions');
-      const go = $('button', 'btn big', 'Begin the Duel'); go.onclick = () => { this.click(); this.audio?.init(); this.audio?.resume(); this._close(m); resolve({ action: 'play', prefs }); };
+      const go = $('button', 'btn big', 'Begin the Duel'); refresh(); go.onclick = () => { this.click(); this.audio?.init(); this.audio?.resume(); this._close(m); resolve({ action: 'play', prefs }); };
       const rules = $('button', 'btn ghost', 'How to play'); rules.onclick = () => { this.click(); this.rules(); };
       const set = $('button', 'btn ghost', 'Settings'); set.onclick = () => { this.click(); this.settings(prefs); };
       btns.append(go, rules, set);
@@ -78,15 +83,30 @@ export class Dialogs {
   }
 
   // ---------------------------------------------------------------- pause
-  pause() {
+  pause({ online = false, over = false } = {}) {
     return new Promise(resolve => {
       const p = $('div', 'panel'); p.style.minWidth = 'min(420px,90vw)';
-      p.innerHTML = '<h2>Paused</h2>';
+      p.innerHTML = `<h2>${online ? 'Menu' : 'Paused'}</h2>`;
       const col = $('div', 'row'); col.style.flexDirection = 'column'; col.style.alignItems = 'stretch';
       const b = (t, a, cls = '') => { const x = $('button', 'btn ' + cls, t); x.onclick = () => { this.click(); this._close(m); resolve(a); }; col.appendChild(x); };
-      b('Resume', 'resume'); b('Settings', 'settings', 'ghost'); b('How to play', 'rules', 'ghost'); b('Restart duel', 'restart', 'ghost'); b('Quit to title', 'quit', 'ghost');
+      b('Resume', 'resume'); b('Settings', 'settings', 'ghost'); b('How to play', 'rules', 'ghost');
+      if (!online) b('Restart duel', 'restart', 'ghost'); else if (over) b('Rematch', 'rematch', 'ghost');
+      b(online ? 'Leave the duel' : 'Quit to title', 'quit', 'ghost');
       p.appendChild(col);
       const m = this._open(p, { esc: () => { this._close(m); resolve('resume'); } });
+    });
+  }
+
+  // ---------------------------------------------------------------- confirm
+  confirm({ title, text, yes = 'Yes', no = 'Cancel' }) {
+    return new Promise(resolve => {
+      const p = $('div', 'panel'); p.style.textAlign = 'center'; p.style.maxWidth = 'min(480px,92vw)';
+      p.innerHTML = `<h2>${title}</h2><p>${text}</p>`;
+      const r = $('div', 'row');
+      const n = $('button', 'btn ghost', no); n.onclick = () => { this.click(); this._close(m); resolve(false); };
+      const y = $('button', 'btn', yes); y.onclick = () => { this.click(); this._close(m); resolve(true); };
+      r.append(n, y); p.appendChild(r);
+      const m = this._open(p, { esc: () => { this._close(m); resolve(false); } });
     });
   }
 
@@ -160,15 +180,15 @@ export class Dialogs {
   }
 
   // ---------------------------------------------------------------- game over
-  gameOver(state, { names, viewer = 0, mode = 'ai' } = {}) {
+  gameOver(state, { names, viewer = 0, mode = 'ai', rematch = null } = {}) {
     return new Promise(resolve => {
       const w = state.winner;
       const p = $('div', 'panel');
       const title = w.kind === 'military' ? 'Military Supremacy' : w.kind === 'science' ? 'Scientific Supremacy' : w.kind === 'draw' ? 'A Shared Legacy' : 'Civilian Victory';
-      const you = w.player !== null && names[w.player] === 'You';
+      const you = w.player !== null && (names[w.player] === 'You' || (mode === 'online' && w.player === viewer));
       const who = w.player === null ? 'The duel ends in a perfect tie' : you ? 'You triumph' : `${names[w.player]} triumphs`;
       const youWon = w.player === viewer;
-      p.innerHTML = `<div class="verdict">${title}</div><div class="vsub">${who}${mode === 'ai' && w.player !== null ? (youWon ? ' — glory is yours!' : ' — your rival prevails.') : '.'}</div>`;
+      p.innerHTML = `<div class="verdict">${title}</div><div class="vsub">${who}${(mode === 'ai' || mode === 'online') && w.player !== null ? (youWon ? ' — glory is yours!' : mode === 'online' ? ' — a worthy rival.' : ' — your rival prevails.') : '.'}</div>`;
       const s = state.final || null;
       if (s) {
         const rows = [['Military', 'military'], ['Civilian (blue)', 'blue'], ['Science (green)', 'green'], ['Commerce (yellow)', 'yellow'], ['Guilds (purple)', 'purple'], ['Wonders', 'wonders'], ['Progress tokens', 'tokens'], ['Treasury (3 coins = 1 VP)', 'coins']];
@@ -180,10 +200,13 @@ export class Dialogs {
         p.insertAdjacentHTML('beforeend', `<p style="text-align:center">${w.kind === 'military' ? 'The conflict pawn has reached the capital gates.' : 'Six different sciences bring enlightenment to the winner\'s people.'}</p>`);
       }
       const r = $('div', 'row');
-      const again = $('button', 'btn', 'Play again'); again.onclick = () => { this.click(); this._close(m); resolve('again'); };
+      const again = $('button', 'btn', rematch ? 'Rematch' : 'Play again');
+      const note = $('div', 'rematch-note');
+      again.onclick = () => { this.click(); if (rematch) { again.disabled = true; rematch.onAgain(); return; } this._close(m); resolve('again'); };
       const look = $('button', 'btn ghost', 'Admire the table'); look.onclick = () => { this.click(); this._close(m); resolve('close'); };
       const menu = $('button', 'btn ghost', 'Title screen'); menu.onclick = () => { this.click(); this._close(m); resolve('menu'); };
       r.append(again, look, menu); p.appendChild(r);
+      if (rematch) { p.appendChild(note); rematch.ready({ note: t => { note.textContent = t; }, disable: () => { again.disabled = true; } }); }
       const m = this._open(p);
     });
   }

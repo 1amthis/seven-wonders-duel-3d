@@ -27,7 +27,7 @@ export class HUD {
     this.els.p = [0, 1].map(i => {
       const el = $('div', `pcard p${i}`);
       el.innerHTML = `
-        <div class="pc-head"><div class="emblem"></div><div class="pc-name"></div><div class="pc-turn">TO PLAY</div></div>
+        <div class="pc-head"><div class="emblem"></div><div class="pc-name"></div><div class="pc-net" role="status"></div><div class="pc-turn">TO PLAY</div></div>
         <div class="pc-stats">
           <div class="stat coins" title="Coins (3 coins = 1 VP at the end)"><span class="si"></span><b>0</b></div>
           <div class="stat vp" title="Victory points right now"><span class="si"></span><b>0</b></div>
@@ -85,6 +85,13 @@ export class HUD {
       const em = el.querySelector('.emblem'); em.textContent = names[i].trim()[0]?.toUpperCase() || '?';
       el.classList.toggle('ai', !humans[i]);
     });
+  }
+  /** Online: show that the other player is slow ('slow') or gone for now ('off'); '' clears it. */
+  setPeerStatus(seat, status) {
+    const el = this.els.p[seat]; if (!el) return;
+    el.classList.toggle('net-slow', status === 'slow');
+    el.classList.toggle('net-off', status === 'off');
+    el.querySelector('.pc-net').textContent = status === 'slow' ? 'SLOW' : status === 'off' ? 'OFFLINE' : '';
   }
   setActive(p) { this.els.p.forEach((el, i) => el.classList.toggle('active', i === p)); }
 

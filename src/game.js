@@ -8,6 +8,8 @@ import { cardCanvas, wonderURL, tokenURL, iconHTML } from './ui/icons.js';
 import { ROMAN, isTouch } from './ui/hud.js';
 import { hashStr } from './gfx/draw.js';
 import { savePrefs } from './ui/dialogs.js';
+import { openLobby, resumeLobby } from './ui/lobby.js';
+import { Online, loadSaved, clearSaved } from './net/online.js';
 
 const nm = (state, p) => `<span class="n${p}">${state.players[p].name}</span>`;
 const coinsTxt = n => `${n} coin${n === 1 ? '' : 's'}`;
@@ -16,6 +18,9 @@ export class Game {
   constructor({ stage, view, hud, dialogs, audio, prefs }) {
     Object.assign(this, { stage, view, hud, dialogs, audio, prefs });
     this.pickedView = null; this.state = null; this.humans = [true, false]; this.paused = false; this.abort = 0; this.mode = null; this.sel = null; this.running = false;
+    this.online = null;      // an Online controller while an online match is on (this.online.seat is ours)
+    this.linkJoin = null;    // room code from an invite link, consumed by the next title screen
+    this.rematchUI = null;   // the game-over dialog's note, while it is open
     view.hoverFilter = info => this.inspectable(info);
     view.liftFilter = info => this.liftable(info);
     view.clickable = info => this.isClickable(info);
@@ -54,7 +59,10 @@ export class Game {
    *  landscape) or the card pyramid (portrait, where the whole table would be a strip of unreadable 12px cards). */
   get baseView() { return this.pickedView || (this.stage.portrait ? 'structure' : 'overview'); }
   dialogOpen() { return this.dialogs.overlay.children.length > 0; }
-  viewer() { const s = this.state; return this.humans[0] && this.humans[1] ? (s?.pending?.player ?? 0) : 0; }
+  /** Two humans sharing one screen: the view follows whoever is on turn. */
+  get hotseat() { return !this.online && this.humans[0] && this.humans[1]; }
+  /** Whose point of view the tooltips and camera buttons take. */
+  viewer() { if (this.online) return this.online.seat; const s = this.state; return this.hotseat ? (s?.pending?.player ?? 0) : 0; }
   sleep(ms) { return this.view.tweens.wait(ms / 1000); }
 
   // ================================================================== lifecycle
@@ -68,6 +76,7 @@ export class Game {
 
   async showTitle() {
     this.abort++;
+    if (this.online) { this.online.leave({ bye: true }); this.online = null; this.hud.setPeerStatus(0, ''); this.hud.setPeerStatus(1, ''); } // walking away is announced to the other player
     this.hud.hideDock(); this.hud.hint(''); this.hud.hideTip(); this.view.clearGlows(); this.view.select(null);
     document.getElementById('hud').style.opacity = 0;
     // demo table behind the title
@@ -79,17 +88,57 @@ export class Game {
     this.stage.goto('cinematic', { snap: true });
     this.orbit = true;
     this.audio?.init(); this.audio?.setMood?.('menu'); this.audio?.startMusic?.('menu');
-    const r = await this.dialogs.mainMenu(this.prefs, { canResume: false });
-    savePrefs(this.prefs);
+    if (!this.linkJoin) this.forgetInvite();
+    const r = await this.titleChoice();
     this.orbit = false;
     document.getElementById('hud').style.opacity = 1;
-    if (r.action === 'play') this.startMatch();
+    if (r.online) this.beginOnline(r.online, r.saved);
+    else if (r.action === 'play') this.startMatch();
   }
+
+  /** The title screen and everything that can come out of it: a local match, or a connected online room. */
+  async titleChoice() {
+    const link = this.linkJoin; this.linkJoin = null;
+    const saved = loadSaved();
+    if (link && saved?.role === 'guest' && saved.code === link) {
+      // this tab was already in that room (a reload, or the phone dropped the page): go straight back in
+      const l = await resumeLobby(this.dialogs, this.prefs, saved);
+      if (l) return { online: l };
+      clearSaved(); this.forgetInvite();
+    } else if (link) {
+      const l = await openLobby(this.dialogs, this.prefs, { join: link });
+      if (l) return { online: l };
+      this.forgetInvite();
+    } else if (saved) {
+      const yes = await this.dialogs.confirm({ title: 'Resume your online duel?', text: `Room <b>${saved.code}</b> was interrupted. ${saved.role === 'host' ? 'Reopen it and your friend can reconnect.' : 'Reconnect and carry on.'}`, yes: 'Resume', no: 'Forget it' });
+      const l = yes ? await resumeLobby(this.dialogs, this.prefs, saved) : null;
+      if (l) return { online: l, saved: l.role === 'host' ? saved : null };
+      clearSaved();
+    }
+    for (;;) {
+      const r = await this.dialogs.mainMenu(this.prefs, { canResume: false });
+      savePrefs(this.prefs);
+      if (r.action !== 'play' || this.prefs.mode !== 'online') return r;
+      const l = await openLobby(this.dialogs, this.prefs, {});
+      if (l) return { online: l };
+    }
+  }
+  /** Drop ?join=CODE from the address bar so that a reload does not try to join a finished duel. */
+  forgetInvite() {
+    try {
+      if (!new URLSearchParams(location.search).has('join')) return;
+      const u = new URL(location.href); u.searchParams.delete('join'); history.replaceState(null, '', u);
+    } catch { /* file: URLs and sandboxes */ }
+  }
+
+  /** The seed from the menu's Seed field (a number, or any text), else a random one. */
+  pickSeed() { const pf = this.prefs; return pf.seed ? (/^\d+$/.test(pf.seed) ? +pf.seed : hashStr(pf.seed)) : (Math.random() * 1e9) | 0; }
 
   async startMatch() {
     const my = ++this.abort;
     const pf = this.prefs;
-    const seed = pf.seed ? (/^\d+$/.test(pf.seed) ? +pf.seed : hashStr(pf.seed)) : (Math.random() * 1e9) | 0;
+    this.online = null;
+    const seed = this.pickSeed();
     this.seed = seed;
     this.humans = pf.mode === 'ai' ? [true, false] : pf.mode === 'spec' ? [false, false] : [true, true];
     const names = pf.mode === 'spec' ? ['Athens', 'Sparta'] : [pf.name || 'You', pf.rival || (pf.mode === 'ai' ? 'Rival' : 'Player 2')];
@@ -99,6 +148,12 @@ export class Game {
       state.wonderPool = ['circus_maximus', 'mausoleum', 'great_library', 'statue_of_zeus', 'appian_way', 'hanging_gardens', 'sphinx', 'piraeus'];
       state.draft.pool = state.wonderPool.slice(0, 4);
     }
+    await this.runMatch(my, state, names);
+  }
+
+  /** Put a match on the table and play it. `resumed`: the state is mid-game (a reload, or a reconnection), so skip the ceremony. */
+  async runMatch(my, state, names, { resumed = false } = {}) {
+    const seed = state.seed;
     this.hud.setNames(names, this.humans);
     this.hud.els.log.innerHTML = '';
     this.view.newGame(state);
@@ -107,10 +162,17 @@ export class Game {
     this.audio?.startMusic?.('calm'); this.audio?.setMood?.('calm');
     this.stage.goto('cinematic', { snap: true });
     this.orbit = false;
-    this.stage.goto('draft');
-    this.hud.log(`— The duel begins · seed ${seed} —`, 'sys');
-    await this.hud.banner('THE DRAFT', `${state.players[state.current].name} chooses first`, 2600);
-    await this.view.syncAll(state);
+    if (resumed) {
+      this.stage.goto(this.baseView);
+      this.hud.log('— The duel resumes —', 'sys');
+      await this.view.syncAll(state, { instant: true });
+    } else {
+      this.stage.goto('draft');
+      this.hud.log(`— The duel begins · seed ${seed} —`, 'sys');
+      await this.hud.banner('THE DRAFT', `${state.players[state.current].name} chooses first`, 2600);
+      await this.view.syncAll(state);
+    }
+    if (my !== this.abort) return;
     this.running = true;
     await this.loop(my);
   }
@@ -123,10 +185,12 @@ export class Game {
       this.hud.setActive(actor); this.hud.update(st); this.view.setActivePlayer(actor);
       this.updateMood();
       let action;
-      if (this.humans[actor]) action = await this.askHuman(pend, my); else action = await this.askAI(pend, my);
+      if (this.online && actor !== this.online.seat) action = await this.askRemote(pend, my);
+      else if (this.humans[actor]) action = await this.askHuman(pend, my);
+      else action = await this.askAI(pend, my);
       if (my !== this.abort) return;
       while (this.paused) await this.sleep(150);
-      const events = apply(st, action);
+      const events = this.online ? this.online.sync.play(action, actor) : apply(st, action);
       this.narrate(events, st);
       const banner = this.banners(events, st);
       await this.view.play(events, st);
@@ -204,6 +268,62 @@ export class Game {
     return action;
   }
 
+  // ================================================================== the other player (online)
+  async askRemote(pend, my) {
+    const st = this.state, actor = pend.player, name = st.players[actor].name;
+    this.stage.goto({ draft: 'draft', token: 'military', library: 'draft', destroy: actor === 0 ? 'right' : 'left' }[pend.type] || this.baseView);
+    const what = { draft: 'is choosing a wonder', token: 'is choosing a progress token', library: 'consults the Great Library', destroy: 'is choosing a card to destroy', revive: 'is raising a card from the discard pile', starter: 'is choosing who begins the next Age' }[pend.type] || 'is thinking';
+    this.hud.hint(`<span class="think">${name} ${what}</span>`, actor);
+    const action = await this.online.sync.nextRemote();
+    if (my !== this.abort) return null;
+    this.clearRemoteSel();
+    if (pend.type === 'turn') { // show which card is being taken, as the computer does
+      const id = st.structure[action.slot].card;
+      this.view.select(id); this.view.setGlow(id, actor ? 0xff8a6a : 0x6ac0ff, 1);
+      await this.sleep(550);
+      this.view.select(null); this.view.setGlow(id, null, 0);
+    }
+    this.hud.hint('');
+    return action;
+  }
+  /** The other player has a card selected (or none, for null): mirror it so you can watch them think. */
+  remoteSel(slot) {
+    const st = this.state, p = st?.pending;
+    if (!this.online || !p || p.type !== 'turn' || p.player === this.online.seat) return;
+    this.clearRemoteSel();
+    if (Number.isInteger(slot) && st.structure[slot] && isAccessible(st, slot)) {
+      const id = st.structure[slot].card;
+      this.view.select(id); this.view.setGlow(id, p.player ? 0xff8a6a : 0x6ac0ff, 1);
+    }
+  }
+  clearRemoteSel() { this.view.select(null); this.view.clearGlows(); }
+
+  /** A connected room (from the lobby, an invite link or a resume) becomes a match. */
+  beginOnline(res, saved) {
+    const online = new Online(this, res.room, res.role);
+    if (res.role === 'host') { if (saved) online.hostResume(saved); else online.hostBegin(online.makeCfg(res.hello.name)); } else online.onStart(res.start);
+    if (this.online !== online) { online.leave(); this.showTitle(); } // the host sent something this version cannot read
+  }
+  /** Put the online match on the table: a fresh one, a rematch, or one picked up again after a reload or a resync. */
+  enterOnline(online, resumed) {
+    this.online = online;
+    const my = ++this.abort;
+    this.dialogs.clear(); this.rematchUI = null; this.paused = false;
+    this.leaveMode();
+    this.humans = [true, true];
+    const st = this.state = online.sync.state;
+    this.runMatch(my, st, st.players.map(p => p.name), { resumed }).catch(e => console.error(e));
+  }
+  async onPeerLeft(name) {
+    if (this.rematchUI) { this.rematchUI.note(`${name} has left the duel.`); this.rematchUI.disable(); return; }
+    const leave = await this.dialogs.confirm({ title: 'Duel abandoned', text: `<b>${name}</b> has left the duel.`, yes: 'Title screen', no: 'Stay at the table' });
+    if (leave) { this.abort++; this.leaveMode(); this.showTitle(); } else this.hud.hint(`${name} has left: press <b>Esc</b> for the menu`);
+  }
+  onRematchAsked(o) {
+    if (this.rematchUI) this.rematchUI.note(`${o.peerName} wants a rematch!`);
+    else if (this.state?.winner) this.hud.toast(`${o.peerName} wants a rematch. Open the menu to accept.`);
+  }
+
   // ================================================================== human input
   askHuman(pend, my) {
     return new Promise(resolve => {
@@ -212,7 +332,7 @@ export class Game {
       const st = this.state;
       const actor = pend.player;
       this.view.clearGlows(); this.view.select(null); this.sel = null; this.hud.hideDock();
-      const multi = this.humans[0] && this.humans[1];
+      const multi = this.hotseat;
       const who = multi ? `${st.players[actor].name}: ` : '';
       switch (pend.type) {
         case 'draft':
@@ -255,7 +375,7 @@ export class Game {
     const st = this.state, p = st.pending.player;
     this.stage.goto(this.baseView);
     this.refreshTurnGlows();
-    const multi = this.humans[0] && this.humans[1];
+    const multi = this.hotseat;
     this.hud.hint(`${multi ? st.players[p].name + ': ' : ''}Pick a <b>glowing card</b> from the pyramid`, p);
     this.audio?.play('turn', { vol: 0.5 });
   }
@@ -276,6 +396,7 @@ export class Game {
   selectSlot(i) {
     const st = this.state, p = st.pending.player;
     this.sel = i;
+    this.online?.sendSel(i);
     const s = st.structure[i], def = CARD[s.card];
     this.view.select(s.card);
     this.refreshTurnGlows();
@@ -300,7 +421,7 @@ export class Game {
       onCancel: () => this.deselect(),
     });
   }
-  deselect() { if (this.mode?.type !== 'turn') return; this.sel = null; this.view.select(null); this.hud.hideDock(); this.refreshTurnGlows(); }
+  deselect() { if (this.mode?.type !== 'turn') return; this.online?.sendSel(null); this.sel = null; this.view.select(null); this.hud.hideDock(); this.refreshTurnGlows(); }
 
   // ---------------------------------------------------------------- picking
   onPick(info) {
@@ -448,13 +569,21 @@ export class Game {
   }
   async pauseMenu() {
     if (this.dialogOpen()) return;
-    this.paused = true;
-    const r = await this.dialogs.pause();
+    const o = this.online;
+    this.paused = !o; // online, the other player's moves keep arriving while the menu is open
+    const r = await this.dialogs.pause({ online: !!o, over: !!this.state?.winner });
     if (r === 'settings') { await this.dialogs.settings(this.prefs, (k, v) => { this.applyPrefs(); }); this.applyPrefs(); return this.pauseMenu(); }
     if (r === 'rules') { await this.dialogs.rules(); return this.pauseMenu(); }
     this.paused = false;
     if (r === 'restart') { this.abort++; this.leaveMode(); this.startMatch(); }
-    if (r === 'quit') { this.abort++; this.leaveMode(); this.showTitle(); }
+    if (r === 'rematch' && o) { o.requestRematch(); this.hud.toast(o.left ? `${o.peerName} has left the duel` : `Rematch requested. Waiting for ${o.peerName}…`); }
+    if (r === 'quit') {
+      if (o && !o.left && !this.state?.winner) {
+        const ok = await this.dialogs.confirm({ title: 'Leave the duel?', text: `${o.peerName} will be told that you left, and the duel ends for both of you.`, yes: 'Leave', no: 'Stay' });
+        if (!ok) return this.pauseMenu();
+      }
+      this.abort++; this.leaveMode(); this.showTitle();
+    }
   }
   onKey(e) {
     if (e.target.tagName === 'INPUT') return;
@@ -480,7 +609,15 @@ export class Game {
     await this.hud.banner(w.kind === 'military' ? 'MILITARY SUPREMACY' : w.kind === 'science' ? 'SCIENTIFIC SUPREMACY' : w.kind === 'draw' ? 'A SHARED LEGACY' : 'THE AGES ARE SETTLED', w.player === null ? '' : `${st.players[w.player].name} ${w.kind === 'civil' ? 'wins on points' : 'wins the duel'}`, 3800, w.player === null ? '' : 'p' + w.player);
     await this.view.victoryFx(st, w);
     if (my !== this.abort) return;
-    const r = await this.dialogs.gameOver(st, { names: st.players.map(p => p.name), viewer: 0, mode: this.prefs.mode });
+    const o = this.online;
+    const r = await this.dialogs.gameOver(st, {
+      names: st.players.map(p => p.name), viewer: this.viewer(), mode: o ? 'online' : this.prefs.mode,
+      rematch: o ? {
+        onAgain: () => { o.requestRematch(); this.rematchUI?.note(`Waiting for ${o.peerName}…`); },
+        ready: ui => { this.rematchUI = ui; if (o.left) { ui.note(`${o.peerName} has left the duel.`); ui.disable(); } else if (o.again.peer) ui.note(`${o.peerName} wants a rematch!`); },
+      } : null,
+    });
+    this.rematchUI = null;
     if (r === 'again') this.startMatch();
     else if (r === 'menu') this.showTitle();
     else { this.hud.hint('The table is yours to admire — press <b>Esc</b> for the menu'); }
